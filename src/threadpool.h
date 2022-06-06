@@ -9,19 +9,20 @@
 #include<future>
 #include<queue>
 
+#define DEFAULT_PRIOR_LEVEL 20
 
 class thread_task{
 private:
-    std::packaged_task<void()> task_p;
+    std::function<void()> task_f;
     int prior_level;    // smaller num means higher prior level
 public:
     // Constructor
-    thread_task(std::function<void()> task_p, int prior_level):task_p(task_p), prior_level(prior_level){}
+    thread_task(std::function<void()> task_f, int prior_level):task_f(task_f), prior_level(prior_level){}
     thread_task(thread_task&& t) = default;
 
     //Disalllow copying
-    thread_task& operator=(const thread_task&) = delete;
-    thread_task(const thread_task&) = delete;
+    //thread_task& operator=(const thread_task&) = delete;
+    //thread_task(const thread_task&) = delete;
 
     // Overload the comparison operators
     bool operator>(const thread_task& t){
@@ -84,10 +85,48 @@ public:
         }
     }
 
-    //TODO: submit
+    //submit 1: default prior level 20
     template<typename F, typename... Args>
     auto submit(F f, Args&&... args) -> std::future<decltype(f(args...))> {
         
+        std::function<decltype(f(args...))()> task_func = std::bind(std::forward<F>(f), std::forward<Args>(args)...); 
+    
+        auto task_package_ptr = std::make_shared<std::packaged_task<decltype(f(args...))()>>(task_func);
+
+        std::function<void()> wrapper_func = [task_package_ptr](){
+            (*task_package_ptr)();
+        };
+
+        {
+            std::unique_lock<std::mutex> q_lck(task_queue_mtx);
+            task_queue.push(std::move(thread_task{wrapper_func, DEFAULT_PRIOR_LEVEL}));
+        }
+
+        thread_sleep_cv.notify_all();
+
+        return task_package_ptr->get_future();
+    }
+
+    //submit 2: given prior level
+    template<typename F, typename... Args>
+    auto submit(int prior_level, F f, Args&&... args) -> std::future<decltype(f(args...))> {
+        
+        std::function<decltype(f(args...))()> task_func = std::bind(std::forward<F>(f), std::forward<Args>(args)...); 
+    
+        auto task_package_ptr = std::make_shared<std::packaged_task<decltype(f(args...))()>>(task_func);
+
+        std::function<void()> wrapper_func = [task_package_ptr](){
+            (*task_package_ptr)();
+        };
+
+        {
+            std::unique_lock<std::mutex> q_lck(task_queue_mtx);
+            task_queue.push(std::move(thread_task{wrapper_func, prior_level}));
+        }
+
+        thread_sleep_cv.notify_all();
+
+        return task_package_ptr->get_future();
     }
 
     //TODO: shutdown
