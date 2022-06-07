@@ -18,7 +18,7 @@ private:
 public:
     // Constructor
     thread_task(std::function<void()> task_f, int prior_level):task_f(task_f), prior_level(prior_level){}
-    thread_task(thread_task&& t) = default;
+    //thread_task(thread_task&& t) = default;
 
     //excute
     void excute() const {
@@ -41,6 +41,21 @@ public:
     bool operator==(const thread_task& t){
         return this->prior_level == t.prior_level;
     }
+    bool operator>(const thread_task& t) const {
+        return this->prior_level < t.prior_level;
+    }
+    bool operator<(const thread_task& t) const {
+        return this->prior_level > t.prior_level;
+    }
+    bool operator>=(const thread_task& t) const {
+        return this->prior_level <= t.prior_level;
+    }
+    bool operator<=(const thread_task& t) const {
+        return this->prior_level >= t.prior_level;
+    }
+    bool operator==(const thread_task& t) const {
+        return this->prior_level == t.prior_level;
+    }
 
 };
 
@@ -54,14 +69,15 @@ public:
 
     public:
         threadworker(size_t id, threadpool* tp_ptr): id(id), tp_ptr(tp_ptr){};
-        ~threadworker();
 
         void operator()(){
             while (tp_ptr->is_alive){
                 
                 std::unique_lock<std::mutex> lck(tp_ptr->thread_sleep_mtx);
 
-                tp_ptr->thread_sleep_cv.wait(lck, (!tp_ptr->task_queue.empty() || !tp_ptr->is_alive));
+                tp_ptr->thread_sleep_cv.wait(lck, [this]() -> bool{
+                    return (!tp_ptr->task_queue.empty() || !tp_ptr->is_alive);}
+                );
 
                 if(!tp_ptr->task_queue.empty() && tp_ptr->is_alive){
                     std::unique_lock<std::mutex> lck(tp_ptr->task_queue_mtx);
@@ -105,7 +121,7 @@ public:
 
     //submit 1: default prior level 20
     template<typename F, typename... Args>
-    auto submit(F f, Args&&... args) -> std::future<decltype(f(args...))> {
+    auto submit(F f, Args&&... args) -> std::future<decltype(f(args...))>&& {
         
         std::function<decltype(f(args...))()> task_func = std::bind(std::forward<F>(f), std::forward<Args>(args)...); 
     
@@ -122,12 +138,12 @@ public:
 
         thread_sleep_cv.notify_one();
 
-        return task_package_ptr->get_future();
+        return std::move(task_package_ptr->get_future());
     }
 
     //submit 2: given prior level
     template<typename F, typename... Args>
-    auto submit(int prior_level, F f, Args&&... args) -> std::future<decltype(f(args...))> {
+    auto submit(int prior_level, F f, Args&&... args) -> std::future<decltype(f(args...))>&& {
         
         std::function<decltype(f(args...))()> task_func = std::bind(std::forward<F>(f), std::forward<Args>(args)...); 
     
@@ -144,7 +160,7 @@ public:
 
         thread_sleep_cv.notify_one();
 
-        return task_package_ptr->get_future();
+        return std::move(task_package_ptr->get_future());
     }
 
     //TODO: shutdown
