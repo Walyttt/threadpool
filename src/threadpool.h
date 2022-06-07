@@ -20,9 +20,10 @@ public:
     thread_task(std::function<void()> task_f, int prior_level):task_f(task_f), prior_level(prior_level){}
     thread_task(thread_task&& t) = default;
 
-    //Disalllow copying
-    //thread_task& operator=(const thread_task&) = delete;
-    //thread_task(const thread_task&) = delete;
+    //excute
+    void excute() const {
+        task_f();
+    }
 
     // Overload the comparison operators
     bool operator>(const thread_task& t){
@@ -44,7 +45,7 @@ public:
 };
 
 class threadpool{
-
+public:
     //Built-in thread worker class
     class threadworker{
     private:
@@ -56,10 +57,27 @@ class threadpool{
         ~threadworker();
 
         void operator()(){
-            //TODO
+            while (tp_ptr->is_alive){
+                
+                std::unique_lock<std::mutex> lck(tp_ptr->thread_sleep_mtx);
+
+                tp_ptr->thread_sleep_cv.wait(lck, (!tp_ptr->task_queue.empty() || !tp_ptr->is_alive));
+
+                if(!tp_ptr->task_queue.empty() && tp_ptr->is_alive){
+                    std::unique_lock<std::mutex> lck(tp_ptr->task_queue_mtx);
+
+                    const thread_task& task = tp_ptr->task_queue.top();
+
+                    tp_ptr->task_queue.pop();
+
+                    task.excute();
+                }
+            }
+            
         }
         
     };
+    friend class threadworker;
 
 private:
     int pool_size;
@@ -102,7 +120,7 @@ public:
             task_queue.push(std::move(thread_task{wrapper_func, DEFAULT_PRIOR_LEVEL}));
         }
 
-        thread_sleep_cv.notify_all();
+        thread_sleep_cv.notify_one();
 
         return task_package_ptr->get_future();
     }
@@ -124,12 +142,23 @@ public:
             task_queue.push(std::move(thread_task{wrapper_func, prior_level}));
         }
 
-        thread_sleep_cv.notify_all();
+        thread_sleep_cv.notify_one();
 
         return task_package_ptr->get_future();
     }
 
     //TODO: shutdown
+    void shutdown(){
+        is_alive = false;
+        thread_sleep_cv.notify_all();
+
+        for(auto& worker : threadworkers_pool){
+            if(worker.joinable()){
+                worker.join();
+            }
+        }
+    }
+
 };
 
 #endif
