@@ -1,7 +1,7 @@
-#include<iostream>
-#include<vector>
-#include<functional>
-#include"src/threadpool.h"
+#include <iostream>
+#include <vector>
+#include <functional>
+#include "threadpool.h"
 
 int Fbi(int i){
    if(i == 1 || i == 2){
@@ -17,13 +17,13 @@ int main(){
 
     tp.init();
     for(int i = 0; i < 100; i++){
-        tp.submit(Fbi, i + 1);
+        fu[i] = tp.submit(Fbi, i + 1);
     }
     tp.shutdown();
 
-    // for(int i = 0; i < 100; i++){
-    //     std::cout << fu[i].get() << std::endl;
-    // }
+    for(int i = 0; i < 100; i++){
+        std::cout << fu[i].get() << std::endl;
+    }
 
     return 0;
 }
